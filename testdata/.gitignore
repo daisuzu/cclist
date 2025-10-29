@@ -1,0 +1,8 @@
+# testdata sandbox - ignore all test data
+
+# Keep only scripts and docs
+*
+!.gitignore
+!README.md
+!setup.sh
+!reset.sh

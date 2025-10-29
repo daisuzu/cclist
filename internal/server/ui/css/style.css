@@ -1,0 +1,847 @@
+/* Reset and base styles */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+:root {
+    --bg-primary: #1e1e1e;
+    --bg-secondary: #252526;
+    --bg-tertiary: #2d2d30;
+    --text-primary: #cccccc;
+    --text-secondary: #808080;
+    --border-color: #3e3e42;
+    --accent-color: #007acc;
+    --accent-hover: #005a9e;
+    --success-color: #4ec9b0;
+    --warning-color: #dcdcaa;
+    --error-color: #f48771;
+    --active-color: #4ec9b0;
+    --idle-color: #808080;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    line-height: 1.6;
+}
+
+#app {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Header */
+header {
+    background-color: var(--bg-secondary);
+    border-bottom: 1px solid var(--border-color);
+    padding: 1rem 2rem;
+}
+
+.header-content {
+    margin: 0 auto;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+header h1 {
+    font-size: 1.5rem;
+    color: var(--text-primary);
+}
+
+.header-actions {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.port-info {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+
+/* Main content */
+main {
+    flex: 1;
+    width: 100%;
+    margin: 0 auto;
+    padding: 2rem;
+}
+
+/* Buttons */
+.btn {
+    padding: 0.5rem 1rem;
+    border: none;
+    border-radius: 4px;
+    background-color: var(--accent-color);
+    color: white;
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: background-color 0.2s;
+    text-decoration: none;
+    display: inline-block;
+}
+
+.btn:hover {
+    background-color: var(--accent-hover);
+}
+
+.btn-icon {
+    position: relative;
+    padding: 0.5rem;
+    background-color: transparent;
+    font-size: 1.2rem;
+}
+
+.btn-icon:hover {
+    background-color: var(--bg-tertiary);
+}
+
+/* Custom tooltip */
+.btn-icon::after {
+    content: attr(title);
+    position: absolute;
+    bottom: -2.5rem;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 0.4rem 0.6rem;
+    background-color: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-primary);
+    font-size: 0.75rem;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.1s ease;
+    z-index: 1000;
+}
+
+.btn-icon:hover::after {
+    opacity: 1;
+}
+
+.btn-secondary {
+    background-color: var(--bg-tertiary);
+    color: var(--text-primary);
+}
+
+.btn-secondary:hover {
+    background-color: var(--border-color);
+}
+
+.btn-danger {
+    background-color: var(--error-color);
+}
+
+.btn-danger:hover {
+    background-color: #d16a58;
+}
+
+/* Table */
+.table-container {
+    background-color: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    overflow-x: auto;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+thead {
+    background-color: var(--bg-tertiary);
+}
+
+th {
+    padding: 0.75rem 1rem;
+    text-align: left;
+    font-weight: 600;
+    color: var(--text-primary);
+    border-bottom: 1px solid var(--border-color);
+}
+
+th.sortable {
+    cursor: pointer;
+    user-select: none;
+    transition: background-color 0.2s;
+}
+
+th.sortable:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+th.sortable.active {
+    color: var(--accent-color);
+}
+
+td {
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+tbody tr:hover {
+    background-color: var(--bg-tertiary);
+}
+
+tbody tr:last-child td {
+    border-bottom: none;
+}
+
+/* Repository list specific */
+.repo-row {
+    cursor: pointer;
+}
+
+.worktree-row {
+    background-color: rgba(255, 255, 255, 0.02);
+}
+
+.worktree-indent {
+    padding-left: 2rem;
+}
+
+.worktree-indent .repo-path {
+    color: var(--text-secondary);
+    font-size: 0.95rem;
+}
+
+.repo-status {
+    font-size: 1.2rem;
+}
+
+.repo-status.active {
+    color: var(--active-color);
+}
+
+.repo-status.history {
+    color: var(--text-secondary);
+}
+
+.repo-path {
+    color: var(--accent-color);
+    text-decoration: none;
+}
+
+.repo-path:hover {
+    text-decoration: underline;
+}
+
+.branch-name {
+    color: var(--text-primary);
+    font-family: 'Courier New', monospace;
+}
+
+.session-status {
+    display: inline-block;
+    padding: 0.25rem 0.5rem;
+    border-radius: 3px;
+    font-size: 0.85rem;
+    font-weight: 500;
+}
+
+.session-status.active {
+    background-color: rgba(78, 201, 176, 0.2);
+    color: var(--active-color);
+}
+
+.session-status.idle {
+    background-color: rgba(128, 128, 128, 0.2);
+    color: var(--idle-color);
+}
+
+.session-status.history {
+    background-color: rgba(128, 128, 128, 0.1);
+    color: var(--text-secondary);
+}
+
+.output-preview {
+    max-width: 300px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+
+.time-ago {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+
+/* Loading */
+.loading {
+    text-align: center;
+    padding: 2rem;
+    color: var(--text-secondary);
+}
+
+/* Error */
+.error {
+    background-color: rgba(244, 135, 113, 0.2);
+    color: var(--error-color);
+    padding: 1rem;
+    border-radius: 4px;
+    margin: 1rem 0;
+}
+
+/* Empty state */
+.empty-state {
+    text-align: center;
+    padding: 3rem;
+    color: var(--text-secondary);
+}
+
+.empty-state h2 {
+    margin-bottom: 1rem;
+}
+
+.empty-state p {
+    margin-bottom: 1.5rem;
+}
+
+/* Filter section */
+.filter-section {
+    margin-bottom: 1.5rem;
+    padding: 1rem;
+    background-color: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+}
+
+.filter-input {
+    width: 100%;
+    padding: 0.5rem;
+    background-color: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-primary);
+    font-size: 0.9rem;
+}
+
+.filter-input:focus {
+    outline: none;
+    border-color: var(--accent-color);
+}
+
+/* Repository Detail page */
+.repo-detail {
+    width: 100%;
+}
+
+/* Terminal layout container */
+.terminals-container {
+    display: flex;
+    flex-direction: column;
+    gap: 2rem;
+}
+
+/* Vertical layout - explicit */
+.terminals-container.vertical {
+    flex-direction: column;
+}
+
+/* Horizontal layout - explicit */
+.terminals-container.horizontal {
+    flex-direction: row;
+}
+
+.terminals-container.horizontal .session-terminal-section {
+    flex: 1;
+    min-width: 0; /* Allow flex items to shrink below content size */
+}
+
+/* Auto layout - responsive based on screen width */
+.terminals-container.auto {
+    flex-direction: column;
+}
+
+@media (min-width: 1600px) {
+    .terminals-container.auto {
+        flex-direction: row;
+    }
+
+    .terminals-container.auto .session-terminal-section {
+        flex: 1;
+        min-width: 0;
+    }
+}
+
+.repo-detail-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.repo-detail-header h2 {
+    color: var(--text-primary);
+    font-size: 1.5rem;
+    margin: 0;
+}
+
+.repo-info {
+    background-color: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.info-row {
+    display: flex;
+    align-items: center;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.info-row:last-child {
+    border-bottom: none;
+}
+
+.info-row .btn {
+    margin-left: 1rem;
+}
+
+.info-label {
+    font-weight: 600;
+    min-width: 180px;
+    color: var(--text-secondary);
+}
+
+.path-value {
+    font-family: 'Courier New', monospace;
+    color: var(--text-primary);
+}
+
+.session-output-section {
+    background-color: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 1.5rem;
+}
+
+.session-output-section h3 {
+    margin-top: 0;
+    margin-bottom: 1rem;
+    color: var(--text-primary);
+}
+
+.output-container {
+    background-color: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 1rem;
+    min-height: 200px;
+    max-height: 600px;
+    overflow-y: auto;
+}
+
+/* Settings page */
+.settings-page {
+    max-width: 1000px;
+}
+
+.settings-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.settings-header h2 {
+    color: var(--text-primary);
+    font-size: 1.5rem;
+    margin: 0;
+}
+
+.settings-section {
+    background-color: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.settings-section h2 {
+    margin-bottom: 1rem;
+    color: var(--text-primary);
+    font-size: 1.2rem;
+}
+
+.settings-section h3 {
+    margin-top: 0;
+    margin-bottom: 1rem;
+    color: var(--text-primary);
+    font-size: 1.1rem;
+}
+
+.readonly-input {
+    background-color: var(--bg-tertiary) !important;
+    cursor: not-allowed;
+    opacity: 0.7;
+}
+
+.form-group {
+    margin-bottom: 1rem;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 0.5rem;
+    color: var(--text-primary);
+    font-weight: 500;
+}
+
+/* Radio and checkbox labels */
+.form-group.radio-group {
+    margin-bottom: 0.5rem;
+}
+
+.radio-label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+    font-weight: 400;
+}
+
+.radio-label input[type="radio"],
+.radio-label input[type="checkbox"] {
+    width: auto;
+    margin: 0;
+    cursor: pointer;
+}
+
+.radio-label span {
+    flex: 1;
+}
+
+/* Input labels (non-radio/checkbox) */
+.input-label {
+    display: block;
+    margin-bottom: 0.5rem;
+    color: var(--text-primary);
+    font-weight: 500;
+}
+
+/* Branch fields indentation */
+.branch-fields {
+    margin-left: 1.5rem;
+    margin-bottom: 1rem;
+}
+
+.form-group input,
+.form-group select {
+    width: 100%;
+    padding: 0.5rem;
+    background-color: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-primary);
+    font-size: 0.9rem;
+}
+
+.form-group input:focus,
+.form-group select:focus {
+    outline: none;
+    border-color: var(--accent-color);
+}
+
+.form-actions {
+    display: flex;
+    gap: 1rem;
+    justify-content: flex-end;
+    margin-top: 1.5rem;
+}
+
+/* Modal */
+.modal {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.7);
+    z-index: 1000;
+}
+
+.modal.active {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal-content {
+    background-color: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 2rem;
+    max-width: 600px;
+    width: 90%;
+    max-height: 80vh;
+    overflow-y: auto;
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+}
+
+.modal-header h2 {
+    color: var(--text-primary);
+    font-size: 1.3rem;
+}
+
+.modal-close {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 1.5rem;
+    cursor: pointer;
+    padding: 0;
+    width: 30px;
+    height: 30px;
+}
+
+.modal-close:hover {
+    color: var(--text-primary);
+}
+
+/* Worktree section */
+.worktree-section {
+    background-color: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.worktree-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+.worktree-header h3 {
+    margin: 0;
+    color: var(--text-primary);
+}
+
+.button-group {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+.worktree-list {
+    margin-top: 1rem;
+}
+
+.worktree-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.worktree-table thead {
+    background-color: var(--bg-tertiary);
+}
+
+.worktree-table th {
+    padding: 0.75rem 1rem;
+    text-align: left;
+    font-weight: 600;
+    color: var(--text-primary);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.worktree-table td {
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.worktree-table tbody tr:hover {
+    background-color: var(--bg-tertiary);
+}
+
+.worktree-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+.worktree-type {
+    display: inline-block;
+    padding: 0.25rem 0.5rem;
+    border-radius: 3px;
+    font-size: 0.85rem;
+    font-weight: 500;
+}
+
+.worktree-type.main {
+    background-color: rgba(78, 201, 176, 0.2);
+    color: var(--active-color);
+}
+
+.worktree-type.worktree {
+    background-color: rgba(128, 128, 128, 0.2);
+    color: var(--text-secondary);
+}
+
+.btn-sm {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.85rem;
+}
+
+.worktree-actions {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+/* Prompt input section */
+.prompt-input-section {
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border-color);
+}
+
+#promptForm {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.prompt-input {
+    flex: 1;
+    padding: 0.5rem;
+    background-color: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-primary);
+    font-size: 0.9rem;
+}
+
+.prompt-input:focus {
+    outline: none;
+    border-color: var(--accent-color);
+}
+
+/* Output lines */
+.output-line {
+    font-family: 'Courier New', monospace;
+    font-size: 0.85rem;
+    padding: 0.25rem 0;
+    color: var(--text-primary);
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+.output-line-error {
+    font-family: 'Courier New', monospace;
+    font-size: 0.85rem;
+    padding: 0.25rem 0;
+    color: var(--error-color);
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+/* Session terminal section */
+.session-terminal-section {
+    background-color: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.session-terminal-section h3 {
+    margin-top: 0;
+    margin-bottom: 1rem;
+    color: var(--text-primary);
+}
+
+.terminal-container {
+    background-color: #1e1e1e;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 0;  /* Remove padding to prevent content from being cut off */
+    height: 600px;  /* Default height for vertical layout */
+    overflow: hidden;
+    /* Hardware acceleration for better performance */
+    transform: translateZ(0);
+    backface-visibility: hidden;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+/* Increase terminal height in horizontal layout */
+.terminals-container.horizontal .terminal-container,
+.terminals-container.horizontal .terminal-placeholder {
+    height: calc(100vh - 400px);  /* Use more vertical space */
+    min-height: 600px;
+}
+
+/* Auto layout uses same increased height on wide screens */
+@media (min-width: 1600px) {
+    .terminals-container.auto .terminal-container,
+    .terminals-container.auto .terminal-placeholder {
+        height: calc(100vh - 400px);
+        min-height: 600px;
+    }
+}
+
+.terminal-placeholder {
+    background-color: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 2rem;
+    text-align: center;
+    min-height: 200px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Utility classes */
+.mt-1 { margin-top: 0.5rem; }
+.mt-2 { margin-top: 1rem; }
+.mb-1 { margin-bottom: 0.5rem; }
+.mb-2 { margin-bottom: 1rem; }
+.text-center { text-align: center; }
+.text-muted { color: var(--text-secondary); }
+
+/* Responsive */
+@media (max-width: 768px) {
+    header {
+        padding: 1rem;
+    }
+
+    main {
+        padding: 1rem;
+    }
+
+    .header-content {
+        flex-direction: column;
+        gap: 1rem;
+    }
+
+    table {
+        font-size: 0.9rem;
+    }
+
+    th, td {
+        padding: 0.5rem;
+    }
+}
