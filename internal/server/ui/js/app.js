@@ -1,3 +1,119 @@
+// WebSocket reconnection helper
+class WebSocketReconnector {
+    constructor(wsUrlGenerator, terminal, options = {}) {
+        this.wsUrlGenerator = wsUrlGenerator;
+        this.terminal = terminal;
+        this.baseReconnectDelay = options.baseReconnectDelay || 1000;
+        this.onConnect = options.onConnect || (() => {});
+        this.onMessage = options.onMessage || (() => {});
+        this.onDisconnect = options.onDisconnect || null;
+
+        this.reconnectAttempts = 0;
+        this.reconnectTimeout = null;
+        this.isCleanupCalled = false;
+        this.socket = null;
+        this.dataHandlers = [];
+    }
+
+    connect() {
+        if (this.isCleanupCalled) {
+            console.log('Cleanup called, skipping reconnection');
+            return null;
+        }
+
+        const wsUrl = this.wsUrlGenerator();
+        const isReconnect = this.reconnectAttempts > 0;
+
+        console.log(`Connecting to WebSocket (attempt ${this.reconnectAttempts + 1})...`);
+
+        this.socket = new WebSocket(wsUrl);
+        this.socket.binaryType = 'arraybuffer';
+
+        this.socket.onopen = () => {
+            console.log('WebSocket connected');
+            this.reconnectAttempts = 0;
+
+            if (isReconnect) {
+                this.terminal.writeln('\r\n[Reconnected]\r\n');
+            }
+
+            this.onConnect(this.socket);
+        };
+
+        this.socket.onmessage = (event) => {
+            this.onMessage(event, this.socket);
+        };
+
+        this.socket.onerror = (error) => {
+            console.error('WebSocket error:', error);
+        };
+
+        this.socket.onclose = (event) => {
+            console.log('WebSocket closed', event.code, event.reason);
+
+            if (this.isCleanupCalled) {
+                console.log('Cleanup called, not attempting reconnection');
+                return;
+            }
+
+            // Don't reconnect on normal closure
+            if (event.code === 1000 || event.code === 1001) {
+                this.terminal.writeln('\r\n[Session ended]\r\n');
+                if (this.onDisconnect) {
+                    this.onDisconnect(event.code);
+                }
+                return;
+            }
+
+            const delay = Math.min(
+                this.baseReconnectDelay * Math.pow(2, this.reconnectAttempts),
+                30000
+            );
+            this.reconnectAttempts++;
+
+            this.terminal.writeln(
+                `\r\n[Connection lost. Reconnecting in ${delay/1000}s... (${this.reconnectAttempts})]\r\n`
+            );
+
+            this.reconnectTimeout = setTimeout(() => {
+                this.reconnectTimeout = null;
+                this.connect();
+            }, delay);
+        };
+
+        return this.socket;
+    }
+
+    cleanup() {
+        this.isCleanupCalled = true;
+
+        if (this.reconnectTimeout) {
+            clearTimeout(this.reconnectTimeout);
+            this.reconnectTimeout = null;
+        }
+
+        if (this.socket) {
+            this.socket.close();
+            this.socket = null;
+        }
+
+        this.dataHandlers.forEach(disposable => {
+            if (disposable && disposable.dispose) {
+                disposable.dispose();
+            }
+        });
+        this.dataHandlers = [];
+    }
+
+    getSocket() {
+        return this.socket;
+    }
+
+    registerDataHandler(disposable) {
+        this.dataHandlers.push(disposable);
+    }
+}
+
 // Main application
 class CCListApp {
     constructor() {
@@ -858,53 +974,126 @@ class CCListApp {
             viewport.addEventListener('scroll', checkShellScrollPosition);
         }
 
-        // Connect to WebSocket
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const wsUrl = `${protocol}//${window.location.host}/ws/terminal/${terminalId}`;
-        const socket = new WebSocket(wsUrl);
-
-        socket.binaryType = 'arraybuffer';
-
         // Protocol constants (matching GoTTY)
         const MSG_INPUT = '1';
         const MSG_RESIZE = '3';
         const MSG_OUTPUT = '1';
 
-        socket.onopen = () => {
-            console.log('Shell WebSocket connected');
+        // Setup WebSocket reconnection
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const reconnector = new WebSocketReconnector(
+            () => `${protocol}//${window.location.host}/ws/terminal/${terminalId}`,
+            terminal,
+            {
+                onConnect: (socket) => {
+                    // Send initial terminal size
+                    setTimeout(() => {
+                        if (socket.readyState === WebSocket.OPEN) {
+                            const resizeMsg = MSG_RESIZE + JSON.stringify({
+                                columns: terminal.cols,
+                                rows: terminal.rows
+                            });
+                            console.log('Sending shell terminal size:', resizeMsg);
+                            socket.send(resizeMsg);
+                        }
+                    }, 50);
 
-            // Send initial terminal size
-            setTimeout(() => {
-                const resizeMsg = MSG_RESIZE + JSON.stringify({
-                    columns: terminal.cols,
-                    rows: terminal.rows
-                });
-                console.log('Sending shell terminal size:', resizeMsg);
-                socket.send(resizeMsg);
-            }, 50);
+                    // Setup data handler (only once, reused across reconnections)
+                    if (reconnector.dataHandlers.length === 0) {
+                        // Send data from terminal to WebSocket
+                        const onDataDisposable = terminal.onData(data => {
+                            const currentSocket = reconnector.getSocket();
+                            if (currentSocket && currentSocket.readyState === WebSocket.OPEN) {
+                                // Encode UTF-8 string as base64 (supports multibyte characters)
+                                const utf8Bytes = new TextEncoder().encode(data);
+                                const binaryString = Array.from(utf8Bytes, byte => String.fromCharCode(byte)).join('');
+                                const encoded = btoa(binaryString);
+                                currentSocket.send(MSG_INPUT + encoded);
+                            }
+                        });
 
-            // Send data from terminal to WebSocket
-            terminal.onData(data => {
-                if (socket.readyState === WebSocket.OPEN) {
-                    // Encode UTF-8 string as base64 (supports multibyte characters)
-                    const utf8Bytes = new TextEncoder().encode(data);
-                    const binaryString = Array.from(utf8Bytes, byte => String.fromCharCode(byte)).join('');
-                    const encoded = btoa(binaryString);
-                    socket.send(MSG_INPUT + encoded);
+                        // Send resize events
+                        const onResizeDisposable = terminal.onResize(({cols, rows}) => {
+                            const currentSocket = reconnector.getSocket();
+                            if (currentSocket && currentSocket.readyState === WebSocket.OPEN) {
+                                const resizeMsg = MSG_RESIZE + JSON.stringify({
+                                    columns: cols,
+                                    rows: rows
+                                });
+                                currentSocket.send(resizeMsg);
+                            }
+                        });
+
+                        reconnector.registerDataHandler(onDataDisposable);
+                        reconnector.registerDataHandler(onResizeDisposable);
+                    }
+                },
+                onMessage: (event) => {
+                    // Handle messages with protocol parsing (GoTTY style)
+                    let data;
+                    if (event.data instanceof ArrayBuffer) {
+                        // Convert ArrayBuffer to string
+                        const decoder = new TextDecoder();
+                        data = decoder.decode(event.data);
+                    } else {
+                        data = event.data;
+                    }
+
+                    if (data.length === 0) return;
+
+                    // Parse protocol message
+                    const msgType = data[0];
+                    const payload = data.slice(1);
+
+                    switch (msgType) {
+                        case MSG_OUTPUT:
+                            // Decode base64 payload and write to terminal
+                            try {
+                                const decoded = atob(payload);
+                                const uint8Array = Uint8Array.from(decoded, c => c.charCodeAt(0));
+                                terminal.write(uint8Array);
+                                // Only auto-scroll if user was at bottom
+                                if (shellAutoScroll) {
+                                    terminal.scrollToBottom();
+                                }
+                            } catch (e) {
+                                console.error('Failed to decode shell output:', e);
+                            }
+                            break;
+                        default:
+                            console.log('Unknown message type:', msgType);
+                    }
+                },
+                onDisconnect: () => {
+                    // Restore the start button after a short delay
+                    setTimeout(() => {
+                        const container = document.getElementById('shellTerminalContainer');
+                        if (container) {
+                            container.className = 'terminal-placeholder';
+                            container.innerHTML = '<p class="text-muted">Click "Start Shell" to launch a shell session in this directory.</p>';
+                        }
+
+                        const startBtn = document.getElementById('shellStartBtn');
+                        if (startBtn) {
+                            startBtn.textContent = '▶ Start Shell';
+                            startBtn.onclick = () => app.startShellTerminal(repoPath);
+                        }
+
+                        // Cleanup terminal references
+                        if (app.currentShellTerminal) {
+                            app.currentShellTerminal.dispose();
+                            app.currentShellTerminal = null;
+                        }
+                        if (app.currentShellSocket) {
+                            app.currentShellSocket = null;
+                        }
+                    }, 500);
                 }
-            });
+            }
+        );
 
-            // Send resize events
-            terminal.onResize(({cols, rows}) => {
-                if (socket.readyState === WebSocket.OPEN) {
-                    const resizeMsg = MSG_RESIZE + JSON.stringify({
-                        columns: cols,
-                        rows: rows
-                    });
-                    socket.send(resizeMsg);
-                }
-            });
-        };
+        // Initial connection
+        reconnector.connect();
 
         // Handle window resize
         const handleResize = () => {
@@ -915,83 +1104,19 @@ class CCListApp {
         };
         window.addEventListener('resize', handleResize);
 
-        // Handle messages
-        socket.onmessage = (event) => {
-            let data;
-            if (event.data instanceof ArrayBuffer) {
-                const decoder = new TextDecoder();
-                data = decoder.decode(event.data);
-            } else {
-                data = event.data;
-            }
-
-            if (data.length === 0) return;
-
-            const msgType = data[0];
-            const payload = data.slice(1);
-
-            switch (msgType) {
-                case MSG_OUTPUT:
-                    try {
-                        const decoded = atob(payload);
-                        const uint8Array = Uint8Array.from(decoded, c => c.charCodeAt(0));
-                        terminal.write(uint8Array);
-                        // Only auto-scroll if user was at bottom
-                        if (shellAutoScroll) {
-                            terminal.scrollToBottom();
-                        }
-                    } catch (e) {
-                        console.error('Failed to decode shell output:', e);
-                    }
-                    break;
-                default:
-                    console.log('Unknown message type:', msgType);
-            }
-        };
-
-        socket.onerror = (error) => {
-            console.error('Shell WebSocket error:', error);
-            terminal.writeln('\r\n[Connection error]\r\n');
-        };
-
-        socket.onclose = () => {
-            console.log('Shell WebSocket closed');
-            terminal.writeln('\r\n[Connection closed]\r\n');
-
-            // Restore the start button after a short delay
-            setTimeout(() => {
-                const container = document.getElementById('shellTerminalContainer');
-                if (container) {
-                    container.className = 'terminal-placeholder';
-                    container.innerHTML = '<p class="text-muted">Click "Start Shell" to launch a shell session in this directory.</p>';
-                }
-
-                const startBtn = document.getElementById('shellStartBtn');
-                if (startBtn) {
-                    startBtn.textContent = '▶ Start Shell';
-                    startBtn.onclick = () => app.startShellTerminal(repoPath);
-                }
-
-                // Cleanup terminal references
-                if (app.currentShellTerminal) {
-                    app.currentShellTerminal.dispose();
-                    app.currentShellTerminal = null;
-                }
-                if (app.currentShellSocket) {
-                    app.currentShellSocket = null;
-                }
-            }, 500);
-        };
-
         // Store references
         this.currentShellTerminal = terminal;
-        this.currentShellSocket = socket;
+        this.currentShellSocket = reconnector.getSocket();
+        this.currentShellReconnector = reconnector;
 
         // Cleanup function
         const cleanup = () => {
             window.removeEventListener('resize', handleResize);
+            if (this.currentShellReconnector) {
+                this.currentShellReconnector.cleanup();
+                this.currentShellReconnector = null;
+            }
             if (this.currentShellSocket) {
-                this.currentShellSocket.close();
                 this.currentShellSocket = null;
             }
             if (this.currentShellTerminal) {
@@ -1057,56 +1182,111 @@ class CCListApp {
             viewport.addEventListener('scroll', checkClaudeScrollPosition);
         }
 
-        // Connect to WebSocket
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const wsUrl = `${protocol}//${window.location.host}/ws/terminal/${sessionId}`;
-        const socket = new WebSocket(wsUrl);
-
-        socket.binaryType = 'arraybuffer';
-
         // Protocol constants (matching GoTTY)
         const MSG_INPUT = '1';
         const MSG_RESIZE = '3';
         const MSG_OUTPUT = '1';
 
-        socket.onopen = () => {
-            console.log('WebSocket connected for terminal');
+        // Setup WebSocket reconnection
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const reconnector = new WebSocketReconnector(
+            () => `${protocol}//${window.location.host}/ws/terminal/${sessionId}`,
+            terminal,
+            {
+                onConnect: (socket) => {
+                    // Wait a brief moment for terminal to be fully initialized, then send size
+                    setTimeout(() => {
+                        if (socket.readyState === WebSocket.OPEN) {
+                            const resizeMsg = MSG_RESIZE + JSON.stringify({
+                                columns: terminal.cols,
+                                rows: terminal.rows
+                            });
+                            console.log('Sending initial terminal size:', resizeMsg);
+                            socket.send(resizeMsg);
+                        }
+                    }, 50);
 
-            // Wait a brief moment for terminal to be fully initialized, then send size
-            setTimeout(() => {
-                const resizeMsg = MSG_RESIZE + JSON.stringify({
-                    columns: terminal.cols,
-                    rows: terminal.rows
-                });
-                console.log('Sending initial terminal size:', resizeMsg);
-                socket.send(resizeMsg);
-            }, 50);
+                    // Setup data handler (only once, reused across reconnections)
+                    if (reconnector.dataHandlers.length === 0) {
+                        // Send data from terminal to WebSocket (with protocol prefix and base64 encoding)
+                        const onDataDisposable = terminal.onData(data => {
+                            console.log('Terminal onData:', JSON.stringify(data), 'bytes:', Array.from(data).map(c => c.charCodeAt(0)));
+                            const currentSocket = reconnector.getSocket();
+                            if (currentSocket && currentSocket.readyState === WebSocket.OPEN) {
+                                // Encode UTF-8 string as base64 (supports multibyte characters)
+                                const utf8Bytes = new TextEncoder().encode(data);
+                                const binaryString = Array.from(utf8Bytes, byte => String.fromCharCode(byte)).join('');
+                                const encoded = btoa(binaryString);
+                                currentSocket.send(MSG_INPUT + encoded);
+                            }
+                        });
 
-            // Send data from terminal to WebSocket (with protocol prefix and base64 encoding)
-            terminal.onData(data => {
-                console.log('Terminal onData:', JSON.stringify(data), 'bytes:', Array.from(data).map(c => c.charCodeAt(0)));
-                if (socket.readyState === WebSocket.OPEN) {
-                    // Encode UTF-8 string as base64 (supports multibyte characters)
-                    const utf8Bytes = new TextEncoder().encode(data);
-                    const binaryString = Array.from(utf8Bytes, byte => String.fromCharCode(byte)).join('');
-                    const encoded = btoa(binaryString);
-                    socket.send(MSG_INPUT + encoded);
+                        // Send resize events (with protocol prefix)
+                        const onResizeDisposable = terminal.onResize(({cols, rows}) => {
+                            const currentSocket = reconnector.getSocket();
+                            if (currentSocket && currentSocket.readyState === WebSocket.OPEN) {
+                                const resizeMsg = MSG_RESIZE + JSON.stringify({
+                                    columns: cols,
+                                    rows: rows
+                                });
+                                currentSocket.send(resizeMsg);
+                            }
+                        });
+
+                        reconnector.registerDataHandler(onDataDisposable);
+                        reconnector.registerDataHandler(onResizeDisposable);
+                    }
+                },
+                onMessage: (event) => {
+                    // Handle messages with protocol parsing (GoTTY style)
+                    let data;
+                    if (event.data instanceof ArrayBuffer) {
+                        // Convert ArrayBuffer to string
+                        const decoder = new TextDecoder();
+                        data = decoder.decode(event.data);
+                    } else {
+                        data = event.data;
+                    }
+
+                    if (data.length === 0) return;
+
+                    // Parse protocol message
+                    const msgType = data[0];
+                    const payload = data.slice(1);
+
+                    switch (msgType) {
+                        case MSG_OUTPUT:
+                            // Decode base64 payload and write to terminal
+                            try {
+                                const decoded = atob(payload);
+                                const uint8Array = Uint8Array.from(decoded, c => c.charCodeAt(0));
+                                terminal.write(uint8Array);
+                                // Only auto-scroll if user was at bottom
+                                if (claudeAutoScroll) {
+                                    terminal.scrollToBottom();
+                                }
+                            } catch (e) {
+                                console.error('Failed to decode output:', e);
+                            }
+                            break;
+                        default:
+                            console.log('Unknown message type:', msgType);
+                    }
+                },
+                onDisconnect: () => {
+                    if (!this.isTerminating) {
+                        setTimeout(() => {
+                            this.updateClaudeTerminalSection();
+                        }, 1000);
+                    }
                 }
-            });
+            }
+        );
 
-            // Send resize events (with protocol prefix)
-            terminal.onResize(({cols, rows}) => {
-                if (socket.readyState === WebSocket.OPEN) {
-                    const resizeMsg = MSG_RESIZE + JSON.stringify({
-                        columns: cols,
-                        rows: rows
-                    });
-                    socket.send(resizeMsg);
-                }
-            });
-        };
+        // Initial connection
+        reconnector.connect();
 
-        // Handle window resize (GoTTY style)
+        // Handle window resize
         const handleResize = () => {
             fitAddon.fit();
             if (claudeAutoScroll) {
@@ -1115,65 +1295,10 @@ class CCListApp {
         };
         window.addEventListener('resize', handleResize);
 
-        // Handle messages with protocol parsing (GoTTY style)
-        socket.onmessage = (event) => {
-            let data;
-            if (event.data instanceof ArrayBuffer) {
-                // Convert ArrayBuffer to string
-                const decoder = new TextDecoder();
-                data = decoder.decode(event.data);
-            } else {
-                data = event.data;
-            }
-
-            if (data.length === 0) {
-                return;
-            }
-
-            // Parse protocol message
-            const msgType = data[0];
-            const payload = data.slice(1);
-
-            switch (msgType) {
-                case MSG_OUTPUT:
-                    // Decode base64 payload and write to terminal
-                    try {
-                        const decoded = atob(payload);
-                        const uint8Array = Uint8Array.from(decoded, c => c.charCodeAt(0));
-                        terminal.write(uint8Array);
-                        // Only auto-scroll if user was at bottom
-                        if (claudeAutoScroll) {
-                            terminal.scrollToBottom();
-                        }
-                    } catch (e) {
-                        console.error('Failed to decode output:', e);
-                    }
-                    break;
-                default:
-                    console.log('Unknown message type:', msgType);
-            }
-        };
-
-        socket.onerror = (error) => {
-            console.error('WebSocket error:', error);
-            terminal.writeln('\r\n[Connection error]\r\n');
-        };
-
-        socket.onclose = () => {
-            console.log('WebSocket closed');
-            terminal.writeln('\r\n[Connection closed]\r\n');
-
-            // Only update UI if we're not intentionally terminating (e.g., process crashed)
-            if (!this.isTerminating) {
-                setTimeout(() => {
-                    this.updateClaudeTerminalSection();
-                }, 1000);
-            }
-        };
-
         // Store references for cleanup
         this.currentTerminal = terminal;
-        this.currentSocket = socket;
+        this.currentSocket = reconnector.getSocket();
+        this.currentReconnector = reconnector;
 
         // Expose helper function for DevTools testing
         window.sendToTerminal = (text) => {
@@ -1199,8 +1324,11 @@ class CCListApp {
             // Remove DevTools helpers
             delete window.sendToTerminal;
             delete window.terminal;
+            if (this.currentReconnector) {
+                this.currentReconnector.cleanup();
+                this.currentReconnector = null;
+            }
             if (this.currentSocket) {
-                this.currentSocket.close();
                 this.currentSocket = null;
             }
             if (this.currentTerminal) {

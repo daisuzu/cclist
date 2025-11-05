@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/creack/pty/v2"
 	"github.com/gorilla/websocket"
@@ -132,7 +133,12 @@ func (s *Server) handleTerminalWebSocket(w http.ResponseWriter, r *http.Request)
 				return
 			case result := <-dataChan:
 				if result.err != nil {
-					if result.err != io.EOF {
+					if result.err == io.EOF {
+						// PTY closed (process ended normally)
+						_ = conn.WriteControl(websocket.CloseMessage,
+							websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""),
+							time.Time{})
+					} else {
 						slog.Error("failed to read from PTY", "error", result.err)
 					}
 					return
