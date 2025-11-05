@@ -687,8 +687,8 @@ class CCListApp {
             const result = await response.json();
             console.log('Session started:', result);
 
-            // Reload the page to show the new session
-            this.navigate('/repo/' + repoPath, false);
+            // Update Claude terminal section to show the new session
+            await this.updateClaudeTerminalWithSession(repoPath, result.data.id);
         } catch (error) {
             console.error('Failed to start session:', error);
             alert('Failed to start session: ' + error.message);
@@ -712,8 +712,8 @@ class CCListApp {
             const result = await response.json();
             console.log('Session resumed:', result);
 
-            // Reload the page to show the resumed session
-            this.navigate('/repo/' + repoPath, false);
+            // Update Claude terminal section to show the resumed session
+            await this.updateClaudeTerminalWithSession(repoPath, result.data.id);
         } catch (error) {
             console.error('Failed to resume session:', error);
             alert('Failed to resume session: ' + error.message);
@@ -787,6 +787,43 @@ class CCListApp {
             }
         } catch (error) {
             console.error('Failed to update ClaudeCode section:', error);
+        }
+    }
+
+    async updateClaudeTerminalWithSession(repoPath, sessionId) {
+        const claudeSection = document.getElementById('claudeTerminalSection');
+        if (!claudeSection) return;
+
+        try {
+            // Cleanup existing Claude terminal if any
+            if (this.terminalCleanup) {
+                this.terminalCleanup();
+                this.terminalCleanup = null;
+            }
+
+            // Fetch updated repository info
+            const repoResponse = await fetch(`/api/directories/${encodeURIComponent(repoPath)}`);
+            if (!repoResponse.ok) {
+                throw new Error('Failed to fetch repository info');
+            }
+            const repo = await repoResponse.json();
+
+            // Update Claude terminal section with active session UI
+            claudeSection.innerHTML = `
+                <div class="worktree-header">
+                    <h3>ClaudeCode Terminal</h3>
+                    <div class="button-group">
+                        <button class="btn btn-danger btn-sm" onclick="app.terminateSession('${sessionId}')">⏹ Terminate</button>
+                    </div>
+                </div>
+                <div id="terminal" class="terminal-container"></div>
+            `;
+
+            // Initialize the terminal
+            setTimeout(() => this.initializeTerminal(sessionId), 100);
+        } catch (error) {
+            console.error('Failed to update Claude terminal with session:', error);
+            alert('Failed to initialize terminal: ' + error.message);
         }
     }
 
