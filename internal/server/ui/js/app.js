@@ -225,6 +225,10 @@ class CCListApp {
         }
     }
 
+    updatePageTitle(title) {
+        document.title = title ? `cclist - ${title}` : 'cclist - ClaudeCode List';
+    }
+
     async loadConfig() {
         try {
             const response = await fetch('/api/config');
@@ -250,6 +254,7 @@ class CCListApp {
     }
 
     async showRepositoryList() {
+        this.updatePageTitle('');
         const main = document.getElementById('mainContent');
         main.innerHTML = '<div class="loading">Loading repositories...</div>';
 
@@ -547,6 +552,7 @@ class CCListApp {
     }
 
     async showRepositoryDetail(repoPath) {
+        this.updatePageTitle(repoPath);
         const main = document.getElementById('mainContent');
         main.innerHTML = '<div class="loading">Loading repository details...</div>';
 
@@ -1229,6 +1235,7 @@ class CCListApp {
     }
 
     async showSettings() {
+        this.updatePageTitle('Settings');
         const main = document.getElementById('mainContent');
         main.innerHTML = '<div class="loading">Loading settings...</div>';
 
@@ -1423,6 +1430,7 @@ class CCListApp {
     }
 
     show404() {
+        this.updatePageTitle('404');
         const main = document.getElementById('mainContent');
         main.innerHTML = `
             <div class="empty-state">
