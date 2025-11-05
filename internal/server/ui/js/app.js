@@ -1,3 +1,25 @@
+// Terminal message format definitions
+const MSG_INPUT = '1';
+const MSG_RESIZE = '3';
+const MSG_OUTPUT = '1';
+
+// Encode UTF-8 string as base64 (supports multibyte characters)
+function encodeTerminalInput(text) {
+    const utf8Bytes = new TextEncoder().encode(text);
+    const binaryString = Array.from(utf8Bytes, byte => String.fromCharCode(byte)).join('');
+    return btoa(binaryString);
+}
+
+// Decode base64 payload to Uint8Array
+function decodeTerminalOutput(base64Payload) {
+    const decoded = atob(base64Payload);
+    return Uint8Array.from(decoded, c => c.charCodeAt(0));
+}
+
+function createResizeMessage(cols, rows) {
+    return MSG_RESIZE + JSON.stringify({ columns: cols, rows: rows });
+}
+
 // WebSocket reconnection helper
 class WebSocketReconnector {
     constructor(wsUrlGenerator, terminal, options = {}) {
@@ -296,31 +318,37 @@ class CCListApp {
         return `<th class="sortable${activeClass}" data-column="${column}">${label}${arrow}</th>`;
     }
 
-    renderRepositoryRow(repo) {
-        const hasSession = repo.activeSession !== null;
+    // Calculate session status information for repository or worktree
+    getSessionStatus(item) {
+        const hasSession = item.activeSession !== null && item.activeSession !== undefined;
         const statusIcon = hasSession ? '●' : '📝';
         const statusClass = hasSession ? 'active' : 'history';
-
-        const branch = repo.gitBranch || 'unknown';
-        const timeAgo = repo.lastAccessed ? this.formatTimeAgo(new Date(repo.lastAccessed)) : 'N/A';
 
         let sessionStatus = 'History';
         let sessionClass = 'history';
         if (hasSession) {
-            sessionStatus = repo.activeSession.isActive ? 'Active' : 'Idle';
-            sessionClass = repo.activeSession.isActive ? 'active' : 'idle';
+            sessionStatus = item.activeSession.isActive ? 'Active' : 'Idle';
+            sessionClass = item.activeSession.isActive ? 'active' : 'idle';
         }
 
-        const output = hasSession && repo.activeSession.outputPath ?
+        const output = hasSession && item.activeSession.outputPath ?
             'Session available' : 'No recent output';
 
+        return { hasSession, statusIcon, statusClass, sessionStatus, sessionClass, output };
+    }
+
+    renderRepositoryRow(repo) {
+        const status = this.getSessionStatus(repo);
+        const branch = repo.gitBranch || 'unknown';
+        const timeAgo = repo.lastAccessed ? this.formatTimeAgo(new Date(repo.lastAccessed)) : 'N/A';
+
         let html = '<tr class="repo-row">';
-        html += `<td><span class="repo-status ${statusClass}">${statusIcon}</span></td>`;
+        html += `<td><span class="repo-status ${status.statusClass}">${status.statusIcon}</span></td>`;
         html += `<td><a href="/repo/${repo.path}" data-link class="repo-path">${repo.path}</a></td>`;
         html += `<td><span class="branch-name">${branch}</span></td>`;
-        html += `<td><span class="session-status ${sessionClass}">${sessionStatus}</span></td>`;
+        html += `<td><span class="session-status ${status.sessionClass}">${status.sessionStatus}</span></td>`;
         html += `<td><span class="time-ago">${timeAgo}</span></td>`;
-        html += `<td><span class="output-preview">${output}</span></td>`;
+        html += `<td><span class="output-preview">${status.output}</span></td>`;
         html += `<td><button class="btn btn-sm" onclick="app.showWorktreeModal('${repo.path}'); event.stopPropagation();">+ Worktree</button></td>`;
         html += '</tr>';
 
@@ -329,31 +357,16 @@ class CCListApp {
             for (const wt of repo.worktrees) {
                 if (wt.isMain) continue; // Skip main worktree (already shown)
 
-                // Calculate worktree relative path from absolute path
                 const wtRelPath = this.getRelativePathFromRoot(wt.path);
-
-                // Check for worktree session
-                const wtHasSession = wt.activeSession !== null && wt.activeSession !== undefined;
-                const wtStatusIcon = wtHasSession ? '●' : '📝';
-                const wtStatusClass = wtHasSession ? 'active' : 'history';
-
-                let wtSessionStatus = 'History';
-                let wtSessionClass = 'history';
-                if (wtHasSession) {
-                    wtSessionStatus = wt.activeSession.isActive ? 'Active' : 'Idle';
-                    wtSessionClass = wt.activeSession.isActive ? 'active' : 'idle';
-                }
-
-                const wtOutput = wtHasSession && wt.activeSession.outputPath ?
-                    'Session available' : 'No session';
+                const wtStatus = this.getSessionStatus(wt);
 
                 html += '<tr class="repo-row worktree-row">';
-                html += `<td><span class="repo-status ${wtStatusClass}">${wtStatusIcon}</span></td>`;
+                html += `<td><span class="repo-status ${wtStatus.statusClass}">${wtStatus.statusIcon}</span></td>`;
                 html += `<td class="worktree-indent"><a href="/repo/${wtRelPath}" data-link class="repo-path">└─ ${wtRelPath}</a></td>`;
                 html += `<td><span class="branch-name">${wt.branch}</span></td>`;
-                html += `<td><span class="session-status ${wtSessionClass}">${wtSessionStatus}</span></td>`;
+                html += `<td><span class="session-status ${wtStatus.sessionClass}">${wtStatus.sessionStatus}</span></td>`;
                 html += `<td><span class="time-ago">N/A</span></td>`;
-                html += `<td><span class="output-preview">${wtOutput}</span></td>`;
+                html += `<td><span class="output-preview">${wtStatus.output}</span></td>`;
                 html += `<td></td>`; // Empty actions cell for worktree rows
                 html += '</tr>';
             }
@@ -960,10 +973,16 @@ class CCListApp {
         }
     }
 
-    initializeShellTerminal(terminalId, terminalElement, repoPath) {
+    // Common terminal initialization for both Claude and Shell terminals
+    createTerminalInstance(terminalId, terminalElement, options = {}) {
+        const {
+            onDisconnect = null,
+            reconnectOptions = {}
+        } = options;
+
         if (!terminalElement) {
-            console.error('Shell terminal element not found');
-            return;
+            console.error('Terminal element not found');
+            return null;
         }
 
         // Create xterm.js terminal
@@ -981,19 +1000,13 @@ class CCListApp {
         const fitAddon = new FitAddon.FitAddon();
         terminal.loadAddon(fitAddon);
 
-        // Store terminal instances for layout resize
-        this.shellTerminal = terminal;
-        this.shellFitAddon = fitAddon;
-
         // Open terminal in the container
         terminal.open(terminalElement);
-
-        // Fit terminal to container size
         fitAddon.fit();
 
-        // Auto-scroll tracking for shell terminal
-        let shellAutoScroll = true;
-        const checkShellScrollPosition = () => {
+        // Auto-scroll tracking
+        let autoScroll = true;
+        const checkScrollPosition = () => {
             const viewport = terminal.element.querySelector('.xterm-viewport');
             if (!viewport) return;
 
@@ -1001,20 +1014,13 @@ class CCListApp {
             const scrollHeight = viewport.scrollHeight;
             const clientHeight = viewport.clientHeight;
 
-            // User is at bottom (with 1px threshold for rounding errors)
-            shellAutoScroll = (scrollTop + clientHeight >= scrollHeight - 1);
+            autoScroll = (scrollTop + clientHeight >= scrollHeight - 1);
         };
 
-        // Listen to scroll events
         const viewport = terminal.element.querySelector('.xterm-viewport');
         if (viewport) {
-            viewport.addEventListener('scroll', checkShellScrollPosition);
+            viewport.addEventListener('scroll', checkScrollPosition);
         }
-
-        // Protocol constants (matching GoTTY)
-        const MSG_INPUT = '1';
-        const MSG_RESIZE = '3';
-        const MSG_OUTPUT = '1';
 
         // Setup WebSocket reconnection
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -1022,16 +1028,12 @@ class CCListApp {
             () => `${protocol}//${window.location.host}/ws/terminal/${terminalId}`,
             terminal,
             {
+                ...reconnectOptions,
                 onConnect: (socket) => {
                     // Send initial terminal size
                     setTimeout(() => {
                         if (socket.readyState === WebSocket.OPEN) {
-                            const resizeMsg = MSG_RESIZE + JSON.stringify({
-                                columns: terminal.cols,
-                                rows: terminal.rows
-                            });
-                            console.log('Sending shell terminal size:', resizeMsg);
-                            socket.send(resizeMsg);
+                            socket.send(createResizeMessage(terminal.cols, terminal.rows));
                         }
                     }, 50);
 
@@ -1041,11 +1043,7 @@ class CCListApp {
                         const onDataDisposable = terminal.onData(data => {
                             const currentSocket = reconnector.getSocket();
                             if (currentSocket && currentSocket.readyState === WebSocket.OPEN) {
-                                // Encode UTF-8 string as base64 (supports multibyte characters)
-                                const utf8Bytes = new TextEncoder().encode(data);
-                                const binaryString = Array.from(utf8Bytes, byte => String.fromCharCode(byte)).join('');
-                                const encoded = btoa(binaryString);
-                                currentSocket.send(MSG_INPUT + encoded);
+                                currentSocket.send(MSG_INPUT + encodeTerminalInput(data));
                             }
                         });
 
@@ -1053,23 +1051,21 @@ class CCListApp {
                         const onResizeDisposable = terminal.onResize(({cols, rows}) => {
                             const currentSocket = reconnector.getSocket();
                             if (currentSocket && currentSocket.readyState === WebSocket.OPEN) {
-                                const resizeMsg = MSG_RESIZE + JSON.stringify({
-                                    columns: cols,
-                                    rows: rows
-                                });
-                                currentSocket.send(resizeMsg);
+                                currentSocket.send(createResizeMessage(cols, rows));
                             }
                         });
 
                         reconnector.registerDataHandler(onDataDisposable);
                         reconnector.registerDataHandler(onResizeDisposable);
                     }
+
+                    if (reconnectOptions.onConnect) {
+                        reconnectOptions.onConnect(socket);
+                    }
                 },
                 onMessage: (event) => {
-                    // Handle messages with protocol parsing (GoTTY style)
                     let data;
                     if (event.data instanceof ArrayBuffer) {
-                        // Convert ArrayBuffer to string
                         const decoder = new TextDecoder();
                         data = decoder.decode(event.data);
                     } else {
@@ -1078,7 +1074,6 @@ class CCListApp {
 
                     if (data.length === 0) return;
 
-                    // Parse protocol message
                     const msgType = data[0];
                     const payload = data.slice(1);
 
@@ -1086,46 +1081,25 @@ class CCListApp {
                         case MSG_OUTPUT:
                             // Decode base64 payload and write to terminal
                             try {
-                                const decoded = atob(payload);
-                                const uint8Array = Uint8Array.from(decoded, c => c.charCodeAt(0));
+                                const uint8Array = decodeTerminalOutput(payload);
                                 terminal.write(uint8Array);
                                 // Only auto-scroll if user was at bottom
-                                if (shellAutoScroll) {
+                                if (autoScroll) {
                                     terminal.scrollToBottom();
                                 }
                             } catch (e) {
-                                console.error('Failed to decode shell output:', e);
+                                console.error('Failed to decode terminal output:', e);
                             }
                             break;
                         default:
                             console.log('Unknown message type:', msgType);
                     }
+
+                    if (reconnectOptions.onMessage) {
+                        reconnectOptions.onMessage(event);
+                    }
                 },
-                onDisconnect: () => {
-                    // Restore the start button after a short delay
-                    setTimeout(() => {
-                        const container = document.getElementById('shellTerminalContainer');
-                        if (container) {
-                            container.className = 'terminal-placeholder';
-                            container.innerHTML = '<p class="text-muted">Click "Start Shell" to launch a shell session in this directory.</p>';
-                        }
-
-                        const startBtn = document.getElementById('shellStartBtn');
-                        if (startBtn) {
-                            startBtn.textContent = '▶ Start Shell';
-                            startBtn.onclick = () => app.startShellTerminal(repoPath);
-                        }
-
-                        // Cleanup terminal references
-                        if (app.currentShellTerminal) {
-                            app.currentShellTerminal.dispose();
-                            app.currentShellTerminal = null;
-                        }
-                        if (app.currentShellSocket) {
-                            app.currentShellSocket = null;
-                        }
-                    }, 500);
-                }
+                onDisconnect: onDisconnect
             }
         );
 
@@ -1135,216 +1109,94 @@ class CCListApp {
         // Handle window resize
         const handleResize = () => {
             fitAddon.fit();
-            if (shellAutoScroll) {
+            if (autoScroll) {
                 terminal.scrollToBottom();
             }
         };
         window.addEventListener('resize', handleResize);
 
-        // Store references
-        this.currentShellTerminal = terminal;
-        this.currentShellSocket = reconnector.getSocket();
-        this.currentShellReconnector = reconnector;
-
-        // Cleanup function
-        const cleanup = () => {
-            window.removeEventListener('resize', handleResize);
-            if (this.currentShellReconnector) {
-                this.currentShellReconnector.cleanup();
-                this.currentShellReconnector = null;
-            }
-            if (this.currentShellSocket) {
-                this.currentShellSocket = null;
-            }
-            if (this.currentShellTerminal) {
-                this.currentShellTerminal.dispose();
-                this.currentShellTerminal = null;
+        // Return terminal instance and cleanup function
+        return {
+            terminal,
+            fitAddon,
+            reconnector,
+            socket: reconnector.getSocket(),
+            cleanup: () => {
+                window.removeEventListener('resize', handleResize);
+                if (reconnector) {
+                    reconnector.cleanup();
+                }
+                if (terminal) {
+                    terminal.dispose();
+                }
             }
         };
+    }
 
-        // Store cleanup function
-        this.shellTerminalCleanup = cleanup;
+    initializeShellTerminal(terminalId, terminalElement, repoPath) {
+        const instance = this.createTerminalInstance(terminalId, terminalElement, {
+            onDisconnect: () => {
+                setTimeout(() => {
+                    const container = document.getElementById('shellTerminalContainer');
+                    if (container) {
+                        container.className = 'terminal-placeholder';
+                        container.innerHTML = '<p class="text-muted">Click "Start Shell" to launch a shell session in this directory.</p>';
+                    }
+
+                    const startBtn = document.getElementById('shellStartBtn');
+                    if (startBtn) {
+                        startBtn.textContent = '▶ Start Shell';
+                        startBtn.onclick = () => app.startShellTerminal(repoPath);
+                    }
+
+                    if (app.currentShellTerminal) {
+                        app.currentShellTerminal = null;
+                    }
+                    if (app.currentShellSocket) {
+                        app.currentShellSocket = null;
+                    }
+                }, 500);
+            }
+        });
+
+        if (!instance) return;
+
+        // Store terminal instances for layout resize
+        this.shellTerminal = instance.terminal;
+        this.shellFitAddon = instance.fitAddon;
+        this.currentShellTerminal = instance.terminal;
+        this.currentShellSocket = instance.socket;
+        this.currentShellReconnector = instance.reconnector;
+        this.shellTerminalCleanup = instance.cleanup;
     }
 
     initializeTerminal(sessionId) {
         const terminalElement = document.getElementById('terminal');
-        if (!terminalElement) {
-            console.error('Terminal element not found');
-            return;
-        }
 
-        // Create xterm.js terminal with minimal configuration (GoTTY style)
-        // Use mostly default settings to avoid issues with TUI apps
-        const terminal = new Terminal({
-            fontSize: 14,
-            fontFamily: 'Menlo, Monaco, "Courier New", monospace',
-            theme: {
-                background: '#1e1e1e',
-                foreground: '#d4d4d4',
-                cursor: '#d4d4d4'
+        const instance = this.createTerminalInstance(sessionId, terminalElement, {
+            onDisconnect: () => {
+                if (!this.isTerminating) {
+                    setTimeout(() => {
+                        this.updateClaudeTerminalSection();
+                    }, 1000);
+                }
             }
         });
 
-        // Load FitAddon
-        const fitAddon = new FitAddon.FitAddon();
-        terminal.loadAddon(fitAddon);
+        if (!instance) return;
 
         // Store terminal instances for layout resize
-        this.claudeTerminal = terminal;
-        this.claudeFitAddon = fitAddon;
-
-        // Open terminal in the container
-        terminal.open(terminalElement);
-
-        // Fit terminal to container size
-        fitAddon.fit();
-
-        // Auto-scroll tracking for Claude terminal
-        let claudeAutoScroll = true;
-        const checkClaudeScrollPosition = () => {
-            const viewport = terminal.element.querySelector('.xterm-viewport');
-            if (!viewport) return;
-
-            const scrollTop = viewport.scrollTop;
-            const scrollHeight = viewport.scrollHeight;
-            const clientHeight = viewport.clientHeight;
-
-            // User is at bottom (with 1px threshold for rounding errors)
-            claudeAutoScroll = (scrollTop + clientHeight >= scrollHeight - 1);
-        };
-
-        // Listen to scroll events
-        const viewport = terminal.element.querySelector('.xterm-viewport');
-        if (viewport) {
-            viewport.addEventListener('scroll', checkClaudeScrollPosition);
-        }
-
-        // Protocol constants (matching GoTTY)
-        const MSG_INPUT = '1';
-        const MSG_RESIZE = '3';
-        const MSG_OUTPUT = '1';
-
-        // Setup WebSocket reconnection
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const reconnector = new WebSocketReconnector(
-            () => `${protocol}//${window.location.host}/ws/terminal/${sessionId}`,
-            terminal,
-            {
-                onConnect: (socket) => {
-                    // Wait a brief moment for terminal to be fully initialized, then send size
-                    setTimeout(() => {
-                        if (socket.readyState === WebSocket.OPEN) {
-                            const resizeMsg = MSG_RESIZE + JSON.stringify({
-                                columns: terminal.cols,
-                                rows: terminal.rows
-                            });
-                            console.log('Sending initial terminal size:', resizeMsg);
-                            socket.send(resizeMsg);
-                        }
-                    }, 50);
-
-                    // Setup data handler (only once, reused across reconnections)
-                    if (reconnector.dataHandlers.length === 0) {
-                        // Send data from terminal to WebSocket (with protocol prefix and base64 encoding)
-                        const onDataDisposable = terminal.onData(data => {
-                            console.log('Terminal onData:', JSON.stringify(data), 'bytes:', Array.from(data).map(c => c.charCodeAt(0)));
-                            const currentSocket = reconnector.getSocket();
-                            if (currentSocket && currentSocket.readyState === WebSocket.OPEN) {
-                                // Encode UTF-8 string as base64 (supports multibyte characters)
-                                const utf8Bytes = new TextEncoder().encode(data);
-                                const binaryString = Array.from(utf8Bytes, byte => String.fromCharCode(byte)).join('');
-                                const encoded = btoa(binaryString);
-                                currentSocket.send(MSG_INPUT + encoded);
-                            }
-                        });
-
-                        // Send resize events (with protocol prefix)
-                        const onResizeDisposable = terminal.onResize(({cols, rows}) => {
-                            const currentSocket = reconnector.getSocket();
-                            if (currentSocket && currentSocket.readyState === WebSocket.OPEN) {
-                                const resizeMsg = MSG_RESIZE + JSON.stringify({
-                                    columns: cols,
-                                    rows: rows
-                                });
-                                currentSocket.send(resizeMsg);
-                            }
-                        });
-
-                        reconnector.registerDataHandler(onDataDisposable);
-                        reconnector.registerDataHandler(onResizeDisposable);
-                    }
-                },
-                onMessage: (event) => {
-                    // Handle messages with protocol parsing (GoTTY style)
-                    let data;
-                    if (event.data instanceof ArrayBuffer) {
-                        // Convert ArrayBuffer to string
-                        const decoder = new TextDecoder();
-                        data = decoder.decode(event.data);
-                    } else {
-                        data = event.data;
-                    }
-
-                    if (data.length === 0) return;
-
-                    // Parse protocol message
-                    const msgType = data[0];
-                    const payload = data.slice(1);
-
-                    switch (msgType) {
-                        case MSG_OUTPUT:
-                            // Decode base64 payload and write to terminal
-                            try {
-                                const decoded = atob(payload);
-                                const uint8Array = Uint8Array.from(decoded, c => c.charCodeAt(0));
-                                terminal.write(uint8Array);
-                                // Only auto-scroll if user was at bottom
-                                if (claudeAutoScroll) {
-                                    terminal.scrollToBottom();
-                                }
-                            } catch (e) {
-                                console.error('Failed to decode output:', e);
-                            }
-                            break;
-                        default:
-                            console.log('Unknown message type:', msgType);
-                    }
-                },
-                onDisconnect: () => {
-                    if (!this.isTerminating) {
-                        setTimeout(() => {
-                            this.updateClaudeTerminalSection();
-                        }, 1000);
-                    }
-                }
-            }
-        );
-
-        // Initial connection
-        reconnector.connect();
-
-        // Handle window resize
-        const handleResize = () => {
-            fitAddon.fit();
-            if (claudeAutoScroll) {
-                terminal.scrollToBottom();
-            }
-        };
-        window.addEventListener('resize', handleResize);
-
-        // Store references for cleanup
-        this.currentTerminal = terminal;
-        this.currentSocket = reconnector.getSocket();
-        this.currentReconnector = reconnector;
+        this.claudeTerminal = instance.terminal;
+        this.claudeFitAddon = instance.fitAddon;
+        this.currentTerminal = instance.terminal;
+        this.currentSocket = instance.socket;
+        this.currentReconnector = instance.reconnector;
 
         // Expose helper function for DevTools testing
         window.sendToTerminal = (text) => {
-            if (this.currentSocket && this.currentSocket.readyState === WebSocket.OPEN) {
-                // Send text with protocol prefix and base64 encoding (supports multibyte characters)
-                const utf8Bytes = new TextEncoder().encode(text + '\r');
-                const binaryString = Array.from(utf8Bytes, byte => String.fromCharCode(byte)).join('');
-                const encoded = btoa(binaryString);
-                this.currentSocket.send(MSG_INPUT + encoded);
+            const currentSocket = this.currentReconnector?.getSocket();
+            if (currentSocket && currentSocket.readyState === WebSocket.OPEN) {
+                currentSocket.send(MSG_INPUT + encodeTerminalInput(text + '\r'));
                 console.log('Sent to terminal:', text);
                 return {success: true, sent: text};
             }
@@ -1352,33 +1204,22 @@ class CCListApp {
         };
 
         // Expose terminal reference for DevTools
-        window.terminal = terminal;
+        window.terminal = instance.terminal;
 
-        // Cleanup on page navigation
-        const cleanup = () => {
-            window.removeEventListener('resize', handleResize);
-            window.removeEventListener('beforeunload', cleanup);
-            // Remove DevTools helpers
+        // Enhanced cleanup that also removes DevTools helpers
+        const originalCleanup = instance.cleanup;
+        const enhancedCleanup = () => {
             delete window.sendToTerminal;
             delete window.terminal;
-            if (this.currentReconnector) {
-                this.currentReconnector.cleanup();
-                this.currentReconnector = null;
-            }
-            if (this.currentSocket) {
-                this.currentSocket = null;
-            }
-            if (this.currentTerminal) {
-                this.currentTerminal.dispose();
-                this.currentTerminal = null;
-            }
+            window.removeEventListener('beforeunload', enhancedCleanup);
+            originalCleanup();
+            this.currentTerminal = null;
+            this.currentSocket = null;
+            this.currentReconnector = null;
         };
 
-        // Register cleanup
-        window.addEventListener('beforeunload', cleanup);
-
-        // Store cleanup function for manual cleanup
-        this.terminalCleanup = cleanup;
+        window.addEventListener('beforeunload', enhancedCleanup);
+        this.terminalCleanup = enhancedCleanup;
     }
 
     escapeHtml(text) {
