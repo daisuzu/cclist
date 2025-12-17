@@ -80,6 +80,10 @@ func (s *Server) handleTerminateSession(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	if err := s.saveSessionOutputs(); err != nil {
+		slog.Warn("failed to save session outputs", "error", err)
+	}
+
 	response := models.APIResponse{
 		Success: true,
 		Message: "Session terminated successfully",

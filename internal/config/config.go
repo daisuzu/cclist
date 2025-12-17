@@ -12,6 +12,7 @@ import (
 const (
 	defaultConfigDir      = ".cclist"
 	defaultConfigFile     = "config.json"
+	sessionOutputsFile    = "session-outputs.json"
 	defaultPort           = 12012
 	defaultShell          = "/bin/sh"
 	defaultRows           = 30
@@ -243,4 +244,49 @@ func (m *Manager) ListRepositories() []models.Repository {
 	}
 
 	return m.config.Repositories
+}
+
+// sessionOutputsPath returns the path to session-outputs.json.
+func (m *Manager) sessionOutputsPath() string {
+	return filepath.Join(filepath.Dir(m.configPath), sessionOutputsFile)
+}
+
+// LoadSessionOutputs loads the session outputs cache from file.
+func (m *Manager) LoadSessionOutputs() (map[string]*models.SessionOutputCache, error) {
+	path := m.sessionOutputsPath()
+
+	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return make(map[string]*models.SessionOutputCache), nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to read session outputs file: %w", err)
+	}
+
+	var cache map[string]*models.SessionOutputCache
+	if err := json.Unmarshal(data, &cache); err != nil {
+		return nil, fmt.Errorf("failed to parse session outputs file: %w", err)
+	}
+
+	return cache, nil
+}
+
+// SaveSessionOutputs saves the session outputs cache to file.
+func (m *Manager) SaveSessionOutputs(cache map[string]*models.SessionOutputCache) error {
+	configDir := filepath.Dir(m.configPath)
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		return fmt.Errorf("failed to create config directory: %w", err)
+	}
+
+	data, err := json.MarshalIndent(cache, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal session outputs: %w", err)
+	}
+
+	path := m.sessionOutputsPath()
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		return fmt.Errorf("failed to write session outputs file: %w", err)
+	}
+
+	return nil
 }

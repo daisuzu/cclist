@@ -122,6 +122,12 @@ type OutputResponse struct {
 	LatestTimestamp time.Time     `json:"latestTimestamp"`
 }
 
+// SessionOutputCache represents cached latest output for a session.
+type SessionOutputCache struct {
+	LastOutput string    `json:"lastOutput"`
+	UpdatedAt  time.Time `json:"updatedAt"`
+}
+
 // BranchInfo represents branch information.
 type BranchInfo struct {
 	Local     []string `json:"local"`

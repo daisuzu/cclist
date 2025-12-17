@@ -7,6 +7,8 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"regexp"
+	"strings"
 	"sync"
 	"time"
 
@@ -144,6 +146,11 @@ func (s *Server) handleTerminalWebSocket(w http.ResponseWriter, r *http.Request)
 					return
 				}
 				if len(result.data) > 0 {
+					if repoPath := s.sessionManager.GetSessionRepoPath(sessionID); repoPath != "" {
+						if output := extractLatestOutput(result.data); output != "" {
+							s.sessionManager.UpdateOutputCache(repoPath, output)
+						}
+					}
 					// Encode data as base64 and prefix with message type (GoTTY protocol)
 					encoded := base64.StdEncoding.EncodeToString(result.data)
 					message := string(msgOutput) + encoded
@@ -221,4 +228,21 @@ func (s *Server) handleTerminalWebSocket(w http.ResponseWriter, r *http.Request)
 
 	wg.Wait()
 	slog.Info("WebSocket disconnected", "session_id", sessionID)
+}
+
+var ansiRegex = regexp.MustCompile(`\x1b\[[0-9;?]*[a-zA-Z]`)
+
+func extractLatestOutput(data []byte) string {
+	s := ansiRegex.ReplaceAllString(string(data), "")
+	lines := strings.Split(s, "\n")
+
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := strings.TrimSpace(lines[i])
+		// Claude Code uses ⏺ (U+23FA) for output markers
+		if after, found := strings.CutPrefix(line, "⏺"); found {
+			return strings.TrimSpace(after)
+		}
+	}
+
+	return ""
 }

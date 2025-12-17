@@ -150,6 +150,10 @@ main {
     overflow-x: auto;
 }
 
+#repoTable {
+    table-layout: auto;
+}
+
 table {
     width: 100%;
     border-collapse: collapse;
@@ -165,6 +169,7 @@ th {
     font-weight: 600;
     color: var(--text-primary);
     border-bottom: 1px solid var(--border-color);
+    white-space: nowrap;
 }
 
 th.sortable {
@@ -227,6 +232,7 @@ tbody tr:last-child td {
 .repo-path {
     color: var(--accent-color);
     text-decoration: none;
+    white-space: nowrap;
 }
 
 .repo-path:hover {
@@ -236,6 +242,7 @@ tbody tr:last-child td {
 .branch-name {
     color: var(--text-primary);
     font-family: 'Courier New', monospace;
+    white-space: nowrap;
 }
 
 .session-status {
@@ -261,8 +268,14 @@ tbody tr:last-child td {
     color: var(--text-secondary);
 }
 
+.td-output {
+    max-width: 25vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 .output-preview {
-    max-width: 300px;
+    display: block;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -703,6 +716,7 @@ tbody tr:last-child td {
 .btn-sm {
     padding: 0.25rem 0.5rem;
     font-size: 0.85rem;
+    white-space: nowrap;
 }
 
 .worktree-actions {

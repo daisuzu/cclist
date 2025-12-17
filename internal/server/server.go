@@ -66,10 +66,19 @@ func NewServer(cfg *config.Manager) *Server {
 	}
 
 	shutdownCh := make(chan struct{})
+	sessionMgr := session.NewManager(appConfig.RootPath)
+
+	// Load session outputs cache from file
+	if cache, err := cfg.LoadSessionOutputs(); err != nil {
+		slog.Warn("failed to load session outputs cache", "error", err)
+	} else {
+		sessionMgr.SetOutputCache(cache)
+	}
+
 	s := &Server{
 		config:              cfg,
 		scanner:             scanner.NewScanner(appConfig.RootPath),
-		sessionManager:      session.NewManager(appConfig.RootPath),
+		sessionManager:      sessionMgr,
 		shutdownToken:       shutdownToken,
 		activeConnections:   make(map[string]*websocket.Conn),
 		cancelFuncs:         make(map[string]context.CancelFunc),
@@ -171,6 +180,11 @@ func (s *Server) Start() error {
 func (s *Server) Shutdown(ctx context.Context) error {
 	slog.Info("shutting down server")
 
+	// Save session outputs cache
+	if err := s.saveSessionOutputs(); err != nil {
+		slog.Warn("failed to save session outputs cache", "error", err)
+	}
+
 	// Close worktree scanner to release file descriptor
 	if ws := s.getWorktreeScanner(); ws != nil {
 		if err := ws.Close(); err != nil {
@@ -179,6 +193,11 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	}
 
 	return s.httpServer.Shutdown(ctx)
+}
+
+func (s *Server) saveSessionOutputs() error {
+	cache := s.sessionManager.GetAllOutputCache()
+	return s.config.SaveSessionOutputs(cache)
 }
 
 // handleIndex serves the index.html for all page routes.

@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log/slog"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -23,6 +24,10 @@ type Manager struct {
 	shellTerminals map[string]*shellTerminalData
 	outputs        map[string][]models.SessionOutput
 	mu             sync.RWMutex
+
+	// outputCache stores latest output per repository path relative to root.
+	outputCache   map[string]*models.SessionOutputCache
+	outputCacheMu sync.RWMutex
 }
 
 type sessionData struct {
@@ -52,6 +57,7 @@ func NewManager(rootPath string) *Manager {
 		sessions:       make(map[string]*sessionData),
 		shellTerminals: make(map[string]*shellTerminalData),
 		outputs:        make(map[string][]models.SessionOutput),
+		outputCache:    make(map[string]*models.SessionOutputCache),
 	}
 }
 
@@ -456,4 +462,52 @@ func (m *Manager) TerminateShellTerminal(terminalID string) error {
 	delete(m.shellTerminals, terminalID)
 
 	return nil
+}
+
+// GetSessionRepoPath returns the repository path for a session.
+func (m *Manager) GetSessionRepoPath(sessionID string) string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	if data, exists := m.sessions[sessionID]; exists {
+		return data.session.Directory
+	}
+	return ""
+}
+
+// UpdateOutputCache updates the latest output for a repository.
+func (m *Manager) UpdateOutputCache(repoPath, output string) {
+	m.outputCacheMu.Lock()
+	defer m.outputCacheMu.Unlock()
+
+	m.outputCache[repoPath] = &models.SessionOutputCache{
+		LastOutput: output,
+		UpdatedAt:  time.Now(),
+	}
+}
+
+// GetOutputCache returns the cached output for a repository.
+func (m *Manager) GetOutputCache(repoPath string) *models.SessionOutputCache {
+	m.outputCacheMu.RLock()
+	defer m.outputCacheMu.RUnlock()
+
+	return m.outputCache[repoPath]
+}
+
+// GetAllOutputCache returns all cached outputs.
+func (m *Manager) GetAllOutputCache() map[string]*models.SessionOutputCache {
+	m.outputCacheMu.RLock()
+	defer m.outputCacheMu.RUnlock()
+
+	result := make(map[string]*models.SessionOutputCache, len(m.outputCache))
+	maps.Copy(result, m.outputCache)
+	return result
+}
+
+// SetOutputCache sets the entire output cache.
+func (m *Manager) SetOutputCache(cache map[string]*models.SessionOutputCache) {
+	m.outputCacheMu.Lock()
+	defer m.outputCacheMu.Unlock()
+
+	m.outputCache = cache
 }

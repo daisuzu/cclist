@@ -53,6 +53,12 @@ func (s *Server) handleListRepositories(w http.ResponseWriter, r *http.Request) 
 			activeSession = session
 		}
 
+		// Get cached output
+		var lastOutput string
+		if cache := s.sessionManager.GetOutputCache(repo.Path); cache != nil {
+			lastOutput = cache.LastOutput
+		}
+
 		repoData := map[string]any{
 			"path":                repo.Path,
 			"fullPath":            filepath.Join(rootPath, repo.Path),
@@ -61,6 +67,7 @@ func (s *Server) handleListRepositories(w http.ResponseWriter, r *http.Request) 
 			"activeSession":       activeSession,
 			"gitBranch":           dir.GitBranch,
 			"lastAccessed":        dir.LastAccessed,
+			"lastOutput":          lastOutput,
 		}
 
 		// Get worktrees if auto-detect is enabled
@@ -86,14 +93,18 @@ func (s *Server) handleListRepositories(w http.ResponseWriter, r *http.Request) 
 						wtSession = session
 					}
 
-					// Debug logging
-					slog.Debug("worktree info", "path", wt.Path, "branch", wt.Branch, "relative_path", wtRelPath, "has_session", wtSession != nil)
+					// Get cached output for worktree
+					var wtLastOutput string
+					if cache := s.sessionManager.GetOutputCache(wtRelPath); cache != nil {
+						wtLastOutput = cache.LastOutput
+					}
 
 					enrichedWt := map[string]any{
 						"branch":        wt.Branch,
 						"path":          wt.Path,
 						"isMain":        wt.IsMain,
 						"activeSession": wtSession,
+						"lastOutput":    wtLastOutput,
 					}
 					enrichedWorktrees = append(enrichedWorktrees, enrichedWt)
 				}

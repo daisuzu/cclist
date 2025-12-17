@@ -294,7 +294,7 @@ class CCListApp {
         html += this.renderSortableHeader('branch', 'Branch');
         html += this.renderSortableHeader('session', 'Session');
         html += this.renderSortableHeader('updated', 'Updated');
-        html += '<th>Latest Output</th>'; // Not sortable
+        html += '<th class="col-output">Latest Output</th>'; // Not sortable
         html += '<th>Actions</th>'; // Not sortable
         html += '</tr></thead>';
         html += '<tbody>';
@@ -336,8 +336,7 @@ class CCListApp {
             sessionClass = item.activeSession.isActive ? 'active' : 'idle';
         }
 
-        const output = hasSession && item.activeSession.outputPath ?
-            'Session available' : 'No recent output';
+        const output = item.lastOutput || 'No recent output';
 
         return { hasSession, statusIcon, statusClass, sessionStatus, sessionClass, output };
     }
@@ -353,7 +352,7 @@ class CCListApp {
         html += `<td><span class="branch-name">${branch}</span></td>`;
         html += `<td><span class="session-status ${status.sessionClass}">${status.sessionStatus}</span></td>`;
         html += `<td><span class="time-ago">${timeAgo}</span></td>`;
-        html += `<td><span class="output-preview">${status.output}</span></td>`;
+        html += `<td class="td-output"><span class="output-preview">${status.output}</span></td>`;
         html += `<td><button class="btn btn-sm" onclick="app.showWorktreeModal('${repo.path}'); event.stopPropagation();">+ Worktree</button></td>`;
         html += '</tr>';
 
@@ -371,7 +370,7 @@ class CCListApp {
                 html += `<td><span class="branch-name">${wt.branch}</span></td>`;
                 html += `<td><span class="session-status ${wtStatus.sessionClass}">${wtStatus.sessionStatus}</span></td>`;
                 html += `<td><span class="time-ago">N/A</span></td>`;
-                html += `<td><span class="output-preview">${wtStatus.output}</span></td>`;
+                html += `<td class="td-output"><span class="output-preview">${wtStatus.output}</span></td>`;
                 html += `<td></td>`; // Empty actions cell for worktree rows
                 html += '</tr>';
             }
