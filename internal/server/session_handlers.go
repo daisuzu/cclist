@@ -21,7 +21,7 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	session, err := s.sessionManager.StartSession(req.RepositoryPath, req.Prompt, req.Args)
+	session, err := s.sessionManager.StartSession(req.RepositoryPath, req.Prompt, req.Args, s.getShell())
 	if err != nil {
 		slog.Error("failed to start session", "error", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -50,7 +50,7 @@ func (s *Server) handleResumeSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	session, err := s.sessionManager.ResumeSession(req.RepositoryPath)
+	session, err := s.sessionManager.ResumeSession(req.RepositoryPath, s.getShell())
 	if err != nil {
 		slog.Error("failed to resume session", "error", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)

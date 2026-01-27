@@ -117,6 +117,17 @@ func (s *Server) setWorktreeScanner(ws *scanner.WorktreeScanner) {
 	s.worktreeScanner.Store(ws)
 }
 
+// getShell returns the shell to use for session/terminal.
+func (s *Server) getShell() string {
+	if shell := s.config.Get().Terminal.Shell; shell != "" {
+		return shell
+	}
+	if shell := os.Getenv("SHELL"); shell != "" {
+		return shell
+	}
+	return "/bin/bash"
+}
+
 // setupRoutes sets up HTTP routes.
 func (s *Server) setupRoutes(mux *http.ServeMux) {
 	// Serve static files

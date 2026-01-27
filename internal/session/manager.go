@@ -83,7 +83,7 @@ func generateSessionID() (string, error) {
 }
 
 // StartSession starts a new ClaudeCode session in the specified repository.
-func (m *Manager) StartSession(repoPath, prompt string, args []string) (*models.Session, error) {
+func (m *Manager) StartSession(repoPath, prompt string, args []string, shell string) (*models.Session, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -98,12 +98,10 @@ func (m *Manager) StartSession(repoPath, prompt string, args []string) (*models.
 		return nil, err
 	}
 
-	// Build command arguments (don't include prompt at startup)
-	cmdArgs := []string{}
-	cmdArgs = append(cmdArgs, args...)
-
-	// Create command
-	cmd := exec.Command("claude", cmdArgs...)
+	// Create command via login shell
+	shellArgs := []string{"-l", "-c", `exec claude "$@"`, "--"}
+	shellArgs = append(shellArgs, args...)
+	cmd := exec.Command(shell, shellArgs...)
 	cmd.Dir = dir
 
 	// Set environment variables for proper terminal behavior
@@ -172,7 +170,7 @@ func (m *Manager) StartSession(repoPath, prompt string, args []string) (*models.
 }
 
 // ResumeSession resumes a previous ClaudeCode session using claude --resume.
-func (m *Manager) ResumeSession(repoPath string) (*models.Session, error) {
+func (m *Manager) ResumeSession(repoPath string, shell string) (*models.Session, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -187,8 +185,8 @@ func (m *Manager) ResumeSession(repoPath string) (*models.Session, error) {
 		return nil, err
 	}
 
-	// Create command with --resume flag (without session ID to use interactive selection)
-	cmd := exec.Command("claude", "--resume")
+	// Create command via login shell
+	cmd := exec.Command(shell, "-l", "-c", `exec claude --resume`)
 	cmd.Dir = dir
 
 	// Set environment variables for proper terminal behavior
@@ -355,11 +353,6 @@ func (m *Manager) StartShellTerminal(repoPath, shell string) (string, error) {
 	dir, err := m.cmdDir(repoPath)
 	if err != nil {
 		return "", err
-	}
-
-	// Create shell command (use configured shell or default to bash)
-	if shell == "" {
-		shell = "/bin/bash"
 	}
 
 	cmd := exec.Command(shell, "-l")

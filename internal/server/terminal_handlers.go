@@ -24,15 +24,8 @@ func (s *Server) handleCreateTerminal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get shell from config
-	appConfig := s.config.Get()
-	shell := appConfig.Terminal.Shell
-	if shell == "" {
-		shell = "/bin/bash"
-	}
-
 	// Start shell terminal
-	terminalID, err := s.sessionManager.StartShellTerminal(req.RepositoryPath, shell)
+	terminalID, err := s.sessionManager.StartShellTerminal(req.RepositoryPath, s.getShell())
 	if err != nil {
 		slog.Error("failed to start shell terminal", "error", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
